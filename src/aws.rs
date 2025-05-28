@@ -1,6 +1,6 @@
 use aws_config::meta::region::RegionProviderChain;
 use aws_config::SdkConfig;
-use aws_types::region::Region;
+use aws_sdk_iam::config::Region;
 use anyhow::Result;
 
 /// Load AWS SDK config using profile and region name

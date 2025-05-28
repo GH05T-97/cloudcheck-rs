@@ -38,3 +38,14 @@ pub async fn generate_ai_report(findings: &[Finding]) -> Result<String> {
 
     Ok(output)
 }
+
+pub async fn explain_iam_findings(findings: &[(String, String)]) -> anyhow::Result<()> {
+    println!("💬 AI Explanation for IAM findings:");
+
+    for (role, policy_doc) in findings {
+        // Replace this with actual OpenAI call later
+        println!("- Role `{}` has overly permissive policy.\n  Reason: Full wildcard access detected.\n", role);
+    }
+
+    Ok(())
+}

@@ -23,11 +23,12 @@ pub async fn check_iam(config: &SdkConfig, ai_explain: bool) -> Result<()> {
 
         for policy in attached.attached_policies().unwrap_or(&[]) {
             let policy_arn = policy.policy_arn().unwrap_or_default();
-            let version = client
+            let policy_resp = client
                 .get_policy()
                 .policy_arn(policy_arn)
                 .send()
-                .await?
+                .await?;
+            let version = policy_resp
                 .policy()
                 .and_then(Policy::default_version_id)
                 .unwrap_or_default();
