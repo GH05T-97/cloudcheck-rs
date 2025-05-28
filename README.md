@@ -125,17 +125,17 @@ scan --fix — suggest CLI-level autofixes where possible
 Plugins/extensions: “Add your own rule with a simple Rust script or JSON file”
 
 **Dashboard**
-1. Historical Scan Log - View previous scans with timestamps, Simple table: Scan ID, account, date, number of findings, score, Click to view detailed report
+1. **Historical Scan Log** - View previous scans with timestamps, Simple table: Scan ID, account, date, number of findings, score, Click to view detailed report
 
-2. Misconfiguration Findings Viewer Group by resource type (S3, IAM, Lambda, etc.), Severity indicators: Low / Medium / High, Explanation + Recommendation (AI generated, or CLI-powered)
+2. **Misconfiguration Findings** - Viewer Group by resource type (S3, IAM, Lambda, etc.), Severity indicators: Low / Medium / High, Explanation + Recommendation (AI generated, or CLI-powered)
 
-3. Security Score + Trend - 0–100 score per scan, Visual indicator if it’s improving or getting worse, Scoring algorithm can be basic (e.g., #critical findings per 100 resources)
+3. **Security Score + Trend** - 0–100 score per scan, Visual indicator if it’s improving or getting worse, Scoring algorithm can be basic (e.g., #critical findings per 100 resources)
 
-4. Simple Project/Environment View - Let users tag scans as prod, staging, or dev, Filter findings by environment, Keep dashboards tidy across accounts or clients
+4. **Simple Project/Environment View** - Let users tag scans as prod, staging, or dev, Filter findings by environment, Keep dashboards tidy across accounts or clients
 
-5. Quick Onboarding & Auth - GitHub or Google OAuth, Magic link login, No need to create a password
+5. **Quick Onboarding & Auth** - GitHub or Google OAuth, Magic link login, No need to create a password
 
-6. Secure CLI-to-Dashboard Upload
+6. **Secure CLI-to-Dashboard Upload**
 Dev runs:
 
 cloudscanner scan --dashboard
@@ -143,9 +143,9 @@ Result is uploaded via short-lived token or signed link
 
 Redirects to view scan in browser
 
-7. Light Theming & UX Polishing - Dark mode, Fast-loading UI, No clutter — focused layout
+7. **Light Theming & UX Polishing** - Dark mode, Fast-loading UI, No clutter — focused layout
 
-8. Feedback or “Suggest a Rule” - Button for devs to suggest scanning rules or improvements
+8. **Feedback or “Suggest a Feature"** - Button for devs to suggest scanning rules or improvements
 
 
 
