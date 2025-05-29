@@ -1,11 +1,8 @@
 use crate::{
-    scanner::types::{Finding, Severity, Category},
-    llm::{LlmAnalysis, PriorityFinding, Recommendation},
-    error::Result,
+    error::Result, llm::{client::{LlmAnalysis, PriorityFinding, Recommendation, RiskAssessment}}, scanner::types::{Finding, Severity}
 };
 use colored::*;
 use tabled::{Table, Tabled};
-use chrono::{DateTime, Utc};
 
 pub struct ReportFormatter;
 
@@ -29,14 +26,14 @@ impl ReportFormatter {
         self.print_priority_findings(&analysis.priority_findings, findings);
         self.print_findings_table(findings);
         self.print_recommendations(&analysis.recommendations);
-        self.print_risk_assessment(&analysis.risk_assessment);
+        self.print_risk_assessment(analysis.risk_assessment.clone());
         
         Ok(())
     }
 
     fn print_header(&self) {
         println!("{}", "CloudGuard S3 Security Scan Report".bright_blue().bold());
-        println!("{}", "="=50);
+        println!("{}", "=".repeat(50));
         println!();
     }
 
@@ -138,7 +135,7 @@ impl ReportFormatter {
         }
     }
 
-    fn print_risk_assessment(&self, risk: &crate::llm::RiskAssessment) {
+    fn print_risk_assessment(&self, risk: RiskAssessment) {
         println!("{}", "Risk Assessment".bright_magenta().bold());
         println!("{}", "-".repeat(20));
         

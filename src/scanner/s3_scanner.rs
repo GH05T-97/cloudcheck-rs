@@ -3,10 +3,10 @@ use crate::{
     scanner::types::*,
     error::{CloudGuardError, Result},
 };
-use aws_sdk_s3::types::{BucketLocationConstraint, Grant, Permission};
-use chrono::{DateTime, Utc};
+use aws_sdk_s3::types::{BucketLocationConstraint, Permission};
+use chrono::{Utc};
 use serde_json::json;
-use tracing::{info, warn, debug};
+use tracing::{info, debug};
 use uuid::Uuid;
 
 pub struct S3Scanner {
@@ -29,7 +29,7 @@ impl S3Scanner {
             .await
             .map_err(|e| CloudGuardError::AwsError(e.to_string()))?;
 
-        let buckets = buckets_response.buckets().unwrap_or(&[]);
+        let buckets = buckets_response.buckets();
         info!("Found {} S3 buckets to scan", buckets.len());
 
         for bucket in buckets {
@@ -118,20 +118,18 @@ impl S3Scanner {
             .send()
             .await
         {
-            if let Some(grants) = acl_response.grants() {
-                for grant in grants {
-                    if let Some(grantee) = grant.grantee() {
-                        if let Some(uri) = grantee.uri() {
-                            if uri.contains("AllUsers") {
-                                match grant.permission() {
-                                    Some(Permission::Read) | Some(Permission::FullControl) => {
-                                        bucket_info.public_read = true;
-                                    }
-                                    Some(Permission::Write) | Some(Permission::WriteAcp) => {
-                                        bucket_info.public_write = true;
-                                    }
-                                    _ => {}
+            for grant in acl_response.grants() {
+                if let Some(grantee) = grant.grantee() {
+                    if let Some(uri) = grantee.uri() {
+                        if uri.contains("AllUsers") {
+                            match grant.permission() {
+                                Some(Permission::Read) | Some(Permission::FullControl) => {
+                                    bucket_info.public_read = true;
                                 }
+                                Some(Permission::Write) | Some(Permission::WriteAcp) => {
+                                    bucket_info.public_write = true;
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -165,13 +163,12 @@ impl S3Scanner {
             .await
         {
             if let Some(config) = encryption_response.server_side_encryption_configuration() {
-                if let Some(rules) = config.rules() {
-                    if !rules.is_empty() {
-                        bucket_info.encryption_enabled = true;
-                        if let Some(rule) = rules.first() {
-                            if let Some(default_encryption) = rule.apply_server_side_encryption_by_default() {
-                                bucket_info.encryption_type = default_encryption.sse_algorithm().map(|a| a.as_str().to_string());
-                            }
+                let rules = config.rules();
+                if !rules.is_empty() {
+                    bucket_info.encryption_enabled = true;
+                    if let Some(rule) = rules.first() {
+                        if let Some(default_encryption) = rule.apply_server_side_encryption_by_default() {
+                            bucket_info.encryption_type = default_encryption.sse_algorithm().map(|a| format!("{a:?}"));
                         }
                     }
                 }
@@ -249,17 +246,15 @@ impl S3Scanner {
             .await
         {
             if let Some(config) = replication_response.replication_configuration() {
-                if let Some(rules) = config.rules() {
-                    for rule in rules {
-                        if let Some(destination) = rule.destination() {
-                            let replication_rule = ReplicationRule {
-                                id: rule.id().unwrap_or("").to_string(),
-                                status: rule.status().as_str().to_string(),
-                                destination_bucket: destination.bucket().unwrap_or("").to_string(),
-                                destination_region: destination.storage_class().map(|sc| sc.as_str().to_string()).unwrap_or_default(),
-                            };
-                            bucket_info.replication_rules.push(replication_rule);
-                        }
+                for rule in config.rules() {
+                    if let Some(destination) = rule.destination() {
+                        let replication_rule = ReplicationRule {
+                            id: rule.id().unwrap_or("").to_string(),
+                            status: rule.status().as_str().to_string(),
+                            destination_bucket: destination.bucket.to_string(),
+                            destination_region: destination.storage_class().map(|sc| sc.as_str().to_string()).unwrap_or_default(),
+                        };
+                        bucket_info.replication_rules.push(replication_rule);
                     }
                 }
             }
@@ -317,5 +312,6 @@ impl S3Scanner {
                 discovered_at: now,
             });
         }
+        Ok(findings)
     }
 }
