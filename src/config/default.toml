@@ -1,0 +1,12 @@
+[aws]
+default_region = "us-east-1"
+
+[output]
+format = "table"
+verbose = false
+save_to_file = false
+output_directory = "./reports"
+
+[logging]
+level = "info"
+format = "pretty"

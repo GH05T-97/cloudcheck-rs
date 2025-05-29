@@ -1,1 +1,7 @@
-/target
+/target/
+Cargo.lock
+config/local.toml
+.env
+*.log
+reports/
+.DS_Store
