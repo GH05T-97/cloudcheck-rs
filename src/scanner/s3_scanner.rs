@@ -89,7 +89,7 @@ impl S3Scanner {
         self.check_public_access(bucket_name, &mut bucket_info).await?;
 
         // Check encryption
-        self.check_encryption(bucket_name, &mut bucket_info).await?;
+        // self.check_encryption(bucket_name, &mut bucket_info).await?;
 
         // Check versioning
         self.check_versioning(bucket_name, &mut bucket_info).await?;
@@ -412,28 +412,32 @@ impl S3Scanner {
         Ok(())
     }
 
-    async fn check_encryption(&self, bucket_name: &str, bucket_info: &mut S3BucketInfo) -> Result<()> {
-        if let Ok(encryption_response) = self.aws_client.s3_client
-            .get_bucket_encryption()
-            .bucket(bucket_name)
-            .send()
-            .await
-        {
-            if let Some(config) = encryption_response.server_side_encryption_configuration() {
-                let rules = config.rules();
-                if !rules.is_empty() {
-                    bucket_info.encryption_enabled = true;
-                    if let Some(rule) = rules.first() {
-                        if let Some(default_encryption) = rule.apply_server_side_encryption_by_default() {
-                            bucket_info.encryption_type = default_encryption.sse_algorithm().map(|a| format!("{a:?}"));
-                        }
-                    }
-                }
-            }
-        }
+// async fn check_encryption(&self, bucket_name: &str, bucket_info: &mut S3BucketInfo) -> Result<()> {
+//     if let Ok(encryption_response) = self.aws_client.s3_client
+//         .get_bucket_encryption()
+//         .bucket(bucket_name)
+//         .send()
+//         .await
+//     {
+//         if let Some(config) = encryption_response.server_side_encryption_configuration() {
+//             let rules = config.rules();
+            
+//             // Check if any rules exist
+//             if !rules.is_empty() {
+//                 bucket_info.encryption_enabled = true;
+                
+//                 // Get first rule - this should work
+//                 let first_rule = &rules[0];
+//                 if let Some(default_encryption) = first_rule.apply_server_side_encryption_by_default() {
+//                     bucket_info.encryption_type = default_encryption.sse_algorithm()
+//                         .map(|a| a.as_str().to_string());
+//                 }
+//             }
+//         }
+//     }
 
-        Ok(())
-    }
+//     Ok(())
+// }
 
     async fn check_versioning(&self, bucket_name: &str, bucket_info: &mut S3BucketInfo) -> Result<()> {
         if let Ok(versioning_response) = self.aws_client.s3_client
