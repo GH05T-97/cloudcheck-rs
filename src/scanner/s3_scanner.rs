@@ -62,6 +62,26 @@ impl S3Scanner {
             replication_rules: Vec::new(),
             object_count: None,
             total_size_bytes: None,
+            public_access_block_enabled: false,
+            block_public_acls: false,
+            ignore_public_acls: false,
+            block_public_policy: false,
+            restrict_public_buckets: false,
+            ssl_requests_only: false,
+            cors_configured: false,
+            cors_allows_all_origins: false,
+            website_hosting_enabled: false,
+            object_lock_enabled: false,
+            object_lock_retention: None,
+            intelligent_tiering_enabled: false,
+            old_objects_count: 0,
+            storage_class_breakdown: std::collections::HashMap::new(),
+            lifecycle_cost_optimization_score: 0,
+            notification_config_exists: false,
+            inventory_enabled: false,
+            analytics_enabled: false,
+            metrics_enabled: false,
+            estimated_monthly_cost: Some(0.00),
         };
 
         // Get bucket location
@@ -107,7 +127,265 @@ impl S3Scanner {
         // Check replication
         self.check_replication(bucket_name, &mut bucket_info).await?;
 
+        self.check_public_access_block(bucket_name, &mut bucket_info).await?;
+        self.check_ssl_enforcement(bucket_name, &mut bucket_info).await?;
+        self.check_cors_configuration(bucket_name, &mut bucket_info).await?;
+        self.check_object_lock(bucket_name, &mut bucket_info).await?;
+        self.check_intelligent_tiering(bucket_name, &mut bucket_info).await?;
+        self.analyze_storage_classes(bucket_name, &mut bucket_info).await?;
+
         Ok(bucket_info)
+    }
+
+        async fn check_public_access_block(&self, bucket_name: &str, bucket_info: &mut S3BucketInfo) -> Result<()> {
+        if let Ok(pab_response) = self.aws_client.s3_client
+            .get_public_access_block()
+            .bucket(bucket_name)
+            .send()
+            .await
+        {
+            if let Some(config) = pab_response.public_access_block_configuration() {
+                bucket_info.public_access_block_enabled = true;
+                bucket_info.block_public_acls = config.block_public_acls().unwrap_or(false);
+                bucket_info.ignore_public_acls = config.ignore_public_acls().unwrap_or(false);
+                bucket_info.block_public_policy = config.block_public_policy().unwrap_or(false);
+                bucket_info.restrict_public_buckets = config.restrict_public_buckets().unwrap_or(false);
+            }
+        }
+        Ok(())
+    }
+
+    async fn check_ssl_enforcement(&self, bucket_name: &str, bucket_info: &mut S3BucketInfo) -> Result<()> {
+        if let Ok(policy_response) = self.aws_client.s3_client
+            .get_bucket_policy()
+            .bucket(bucket_name)
+            .send()
+            .await
+        {
+            if let Some(policy) = policy_response.policy() {
+                // Check for SSL-only policy
+                bucket_info.ssl_requests_only = policy.contains("aws:SecureTransport") 
+                    && policy.contains("\"Bool\":{\"aws:SecureTransport\":\"false\"}")
+                    && policy.contains("\"Effect\":\"Deny\"");
+            }
+        }
+        Ok(())
+    }
+
+    async fn check_cors_configuration(&self, bucket_name: &str, bucket_info: &mut S3BucketInfo) -> Result<()> {
+        if let Ok(cors_response) = self.aws_client.s3_client
+            .get_bucket_cors()
+            .bucket(bucket_name)
+            .send()
+            .await
+        {
+            bucket_info.cors_configured = true;
+            for rule in cors_response.cors_rules() {
+                for origin in rule.allowed_origins() {
+                    if origin == "*" {
+                        bucket_info.cors_allows_all_origins = true;
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn check_object_lock(&self, bucket_name: &str, bucket_info: &mut S3BucketInfo) -> Result<()> {
+        if let Ok(lock_response) = self.aws_client.s3_client
+            .get_object_lock_configuration()
+            .bucket(bucket_name)
+            .send()
+            .await
+        {
+            if let Some(config) = lock_response.object_lock_configuration() {
+                bucket_info.object_lock_enabled = config.object_lock_enabled()
+                    .map(|s| s.as_str() == "Enabled")
+                    .unwrap_or(false);
+                    
+                if let Some(rule) = config.rule() {
+                    if let Some(retention) = rule.default_retention() {
+                        bucket_info.object_lock_retention = Some(format!("{:?}", retention));
+                    }
+                }
+            }
+        }
+        Ok(())
+        }
+
+        async fn analyze_storage_classes(&self, bucket_name: &str, bucket_info: &mut S3BucketInfo) -> Result<()> {
+        // List objects and analyze storage classes
+        let mut continuation_token: Option<String> = None;
+        let mut old_objects = 0u64;
+        let mut storage_breakdown = std::collections::HashMap::new();
+        
+        loop {
+            let mut request = self.aws_client.s3_client
+                .list_objects_v2()
+                .bucket(bucket_name)
+                .max_keys(1000);
+                
+            if let Some(token) = &continuation_token {
+                request = request.continuation_token(token);
+            }
+            
+            match request.send().await {
+                Ok(response) => {
+                    for object in response.contents() {
+                        let storage_class = object.storage_class()
+                            .map(|sc| sc.as_str().to_string())
+                            .unwrap_or_else(|| "STANDARD".to_string());
+                        
+                        *storage_breakdown.entry(storage_class.clone()).or_insert(0) += 1;
+                        
+                        // Check if STANDARD storage is old (>30 days)
+                        if storage_class == "STANDARD" {
+                            if let Some(last_modified) = object.last_modified() {
+                                let age = Utc::now() - last_modified.as_chrono_utc();
+                                if age.num_days() > 30 {
+                                    old_objects += 1;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if response.is_truncated().unwrap_or(false) {
+                        continuation_token = response.next_continuation_token().map(|s| s.to_string());
+                    } else {
+                        break;
+                    }
+                },
+                Err(_) => break, // Handle error appropriately
+            }
+        }
+        
+        bucket_info.storage_class_breakdown = storage_breakdown;
+        bucket_info.old_objects_count = old_objects;
+        
+        Ok(())
+    }
+
+    async fn check_intelligent_tiering(&self, bucket_name: &str, bucket_info: &mut S3BucketInfo) -> Result<()> {
+        if let Ok(it_response) = self.aws_client.s3_client
+            .list_bucket_intelligent_tiering_configurations()
+            .bucket(bucket_name)
+            .send()
+            .await
+        {
+            bucket_info.intelligent_tiering_enabled = !it_response.intelligent_tiering_configuration_list().is_empty();
+        }
+        Ok(())
+    }
+
+    // Add WAF-specific findings
+    async fn generate_waf_findings(&self, bucket_info: &S3BucketInfo) -> Result<Vec<Finding>> {
+        let mut findings = Vec::new();
+        let now = Utc::now();
+        
+        // SEC-01: Public Access Block not enabled (Critical WAF gap)
+        if !bucket_info.public_access_block_enabled {
+            findings.push(Finding {
+                id: Uuid::new_v4().to_string(),
+                title: "WAF SEC-01: Public Access Block Not Configured".to_string(),
+                description: format!(
+                    "Bucket '{}' lacks Public Access Block configuration. AWS Well-Architected Security Pillar requires this control.",
+                    bucket_info.name
+                ),
+                severity: Severity::High,
+                category: Category::Security,
+                resource_type: "S3Bucket".to_string(),
+                resource_id: bucket_info.name.clone(),
+                region: bucket_info.region.clone(),
+                details: json!({
+                    "waf_pillar": "Security",
+                    "waf_question": "SEC-01",
+                    "compliance_gap": "Public Access Block",
+                    "business_impact": "Potential data exposure risk",
+                    "recommended_action": "Enable Public Access Block settings"
+                }),
+                discovered_at: now,
+            });
+        }
+        
+        // SEC-08: SSL-only access not enforced
+        if !bucket_info.ssl_requests_only {
+            findings.push(Finding {
+                id: Uuid::new_v4().to_string(),
+                title: "WAF SEC-08: Data in Transit Not Protected".to_string(),
+                description: format!(
+                    "Bucket '{}' does not enforce SSL-only access. Data in transit protection required by WAF.",
+                    bucket_info.name
+                ),
+                severity: Severity::Medium,
+                category: Category::Security,
+                resource_type: "S3Bucket".to_string(),
+                resource_id: bucket_info.name.clone(),
+                region: bucket_info.region.clone(),
+                details: json!({
+                    "waf_pillar": "Security",
+                    "waf_question": "SEC-08",
+                    "compliance_gap": "SSL enforcement",
+                    "estimated_risk": "Man-in-the-middle attacks",
+                    "recommended_action": "Add bucket policy requiring SSL"
+                }),
+                discovered_at: now,
+            });
+        }
+        
+        // COST-07: Storage class optimization opportunity
+        if bucket_info.old_objects_count > 0 && bucket_info.lifecycle_rules.is_empty() {
+            let estimated_savings = (bucket_info.old_objects_count as f64) * 0.0125 * 30.0; // Rough calculation
+            findings.push(Finding {
+                id: Uuid::new_v4().to_string(),
+                title: "WAF COST-07: Storage Class Optimization Opportunity".to_string(),
+                description: format!(
+                    "Bucket '{}' has {} objects in STANDARD storage >30 days old without lifecycle policies",
+                    bucket_info.name, bucket_info.old_objects_count
+                ),
+                severity: Severity::Low,
+                category: Category::Cost,
+                resource_type: "S3Bucket".to_string(),
+                resource_id: bucket_info.name.clone(),
+                region: bucket_info.region.clone(),
+                details: json!({
+                    "waf_pillar": "Cost Optimization",
+                    "waf_question": "COST-07",
+                    "optimization_opportunity": "Lifecycle policies",
+                    "estimated_monthly_savings_gbp": estimated_savings,
+                    "objects_affected": bucket_info.old_objects_count,
+                    "recommended_action": "Implement lifecycle policies for IA/Glacier transition"
+                }),
+                discovered_at: now,
+            });
+        }
+        
+        // REL-09: Backup strategy assessment
+        if !bucket_info.versioning_enabled && bucket_info.replication_rules.is_empty() {
+            findings.push(Finding {
+                id: Uuid::new_v4().to_string(),
+                title: "WAF REL-09: Insufficient Backup Strategy".to_string(),
+                description: format!(
+                    "Bucket '{}' lacks versioning and cross-region replication for data durability",
+                    bucket_info.name
+                ),
+                severity: Severity::Medium,
+                category: Category::Reliability,
+                resource_type: "S3Bucket".to_string(),
+                resource_id: bucket_info.name.clone(),
+                region: bucket_info.region.clone(),
+                details: json!({
+                    "waf_pillar": "Reliability",
+                    "waf_question": "REL-09",
+                    "gap": "Backup and versioning strategy",
+                    "business_risk": "Data loss potential",
+                    "recommended_action": "Enable versioning and consider cross-region replication"
+                }),
+                discovered_at: now,
+            });
+        }
+        
+        Ok(findings)
     }
 
     async fn check_public_access(&self, bucket_name: &str, bucket_info: &mut S3BucketInfo) -> Result<()> {
@@ -217,21 +495,17 @@ impl S3Scanner {
             .send()
             .await
         {
-            if let Some(rules) = lifecycle_response.rules() {
-                for rule in rules {
-                    let lifecycle_rule = LifecycleRule {
-                        id: rule.id().unwrap_or("").to_string(),
-                        status: rule.status().as_str().to_string(),
-                        filter: rule.filter().and_then(|f| f.prefix()).map(|p| p.to_string()),
-                        transitions: rule.transitions().map(|transitions| {
-                            transitions.iter().map(|t| LifecycleTransition {
-                                days: t.days(),
-                                storage_class: t.storage_class().map(|sc| sc.as_str().to_string()).unwrap_or_default(),
-                            }).collect()
-                        }).unwrap_or_default(),
-                    };
-                    bucket_info.lifecycle_rules.push(lifecycle_rule);
-                }
+            for rule in lifecycle_response.rules() {
+                let lifecycle_rule = LifecycleRule {
+                    id: rule.id().unwrap_or("").to_string(),
+                    status: rule.status().as_str().to_string(),
+                    filter: rule.filter().and_then(|f| f.prefix()).map(|p| p.to_string()),
+                    transitions: rule.transitions().iter().map(|t| LifecycleTransition {
+                        days: t.days(),
+                        storage_class: t.storage_class().map(|sc| sc.as_str().to_string()).unwrap_or_default(),
+                    }).collect(),
+                };
+                bucket_info.lifecycle_rules.push(lifecycle_rule);
             }
         }
 
