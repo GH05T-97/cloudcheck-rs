@@ -242,7 +242,10 @@ impl S3Scanner {
                         // Check if STANDARD storage is old (>30 days)
                         if storage_class == "STANDARD" {
                             if let Some(last_modified) = object.last_modified() {
-                                let age = Utc::now() - last_modified.as_chrono_utc();
+                                let secs = last_modified.secs();
+                                let chrono_time = chrono::DateTime::<Utc>::from_timestamp(secs, 0)
+                                    .unwrap_or_else(|| chrono::DateTime::<Utc>::from_timestamp(0, 0).unwrap());
+                                let age = Utc::now() - chrono_time;
                                 if age.num_days() > 30 {
                                     old_objects += 1;
                                 }
@@ -344,7 +347,7 @@ impl S3Scanner {
                     bucket_info.name, bucket_info.old_objects_count
                 ),
                 severity: Severity::Low,
-                category: Category::Cost,
+                category: Category::CostOptimization,
                 resource_type: "S3Bucket".to_string(),
                 resource_id: bucket_info.name.clone(),
                 region: bucket_info.region.clone(),
@@ -370,7 +373,7 @@ impl S3Scanner {
                     bucket_info.name
                 ),
                 severity: Severity::Medium,
-                category: Category::Reliability,
+                category: Category::DisasterRecovery,
                 resource_type: "S3Bucket".to_string(),
                 resource_id: bucket_info.name.clone(),
                 region: bucket_info.region.clone(),
