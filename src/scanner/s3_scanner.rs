@@ -3,7 +3,7 @@ use crate::{
     scanner::types::*,
     error::{CloudGuardError, Result},
 };
-use aws_sdk_s3::types::{BucketLocationConstraint, Permission};
+use aws_sdk_s3::types::{Permission};
 use chrono::{Utc};
 use serde_json::json;
 use tracing::{info, debug};
@@ -84,31 +84,7 @@ impl S3Scanner {
             estimated_monthly_cost: Some(0.00),
         };
 
-        // Get bucket location
-        if let Ok(location_response) = self.aws_client.s3_client
-            .get_bucket_location()
-            .bucket(bucket_name)
-            .send()
-            .await
-        {
-            if let Some(constraint) = location_response.location_constraint() {
-                match constraint {
-                    BucketLocationConstraint::Eu => bucket_info.region = "eu-west-1".to_string(),
-                    BucketLocationConstraint::EuWest1 => bucket_info.region = "eu-west-1".to_string(),
-                    BucketLocationConstraint::UsWest1 => bucket_info.region = "us-west-1".to_string(),
-                    BucketLocationConstraint::UsWest2 => bucket_info.region = "us-west-2".to_string(),
-                    BucketLocationConstraint::ApSouth1 => bucket_info.region = "ap-south-1".to_string(),
-                    BucketLocationConstraint::ApSoutheast1 => bucket_info.region = "ap-southeast-1".to_string(),
-                    BucketLocationConstraint::ApSoutheast2 => bucket_info.region = "ap-southeast-2".to_string(),
-                    BucketLocationConstraint::ApNortheast1 => bucket_info.region = "ap-northeast-1".to_string(),
-                    BucketLocationConstraint::SaEast1 => bucket_info.region = "sa-east-1".to_string(),
-                    BucketLocationConstraint::CnNorth1 => bucket_info.region = "cn-north-1".to_string(),
-                    BucketLocationConstraint::EuCentral1 => bucket_info.region = "eu-central-1".to_string(),
-                    _ => {} // Keep default region
-                }
-            }
-        }
-
+  
         // Check public access
         self.check_public_access(bucket_name, &mut bucket_info).await?;
 
