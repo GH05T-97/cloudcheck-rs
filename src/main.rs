@@ -22,13 +22,11 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     
     // Load configuration from a file or environment variables
-    let settings = Settings::new()?; // No need for mut here if config command is gone
+    let settings = Settings::new()?; 
     info!("CloudGuard CLI v{} starting", env!("CARGO_PKG_VERSION"));
 
-    match cli.command { // No need for `&` if you want to consume `cli.command`
-        Commands::Scan { service } => { // Removed region and profile from here
-            // `region` and `profile` will now be implicitly loaded by the AWS SDK
-            // via environment variables or ~/.aws/config/credentials.
+    match cli.command { 
+        Commands::Scan { service } => { 
             scan_command(
                 service, 
                 &settings // Pass settings reference
@@ -70,9 +68,6 @@ async fn scan_command(
 /// Contains the specific logic for scanning S3 buckets.
 async fn handle_s3_scan(aws_client: &AwsClient, settings: &Settings) -> Result<()> {
     info!("Starting S3 bucket scan...");
-    // Cloning the AwsClient: This assumes AwsClient is cheap to clone,
-    // typically meaning its internal AWS SDK client is wrapped in an Arc.
-    // If not, you might need to reconsider how AwsClient is passed around.
     let scanner = S3Scanner::new(aws_client.clone()); 
     
     let findings = scanner.scan().await?;
@@ -84,14 +79,17 @@ async fn handle_s3_scan(aws_client: &AwsClient, settings: &Settings) -> Result<(
     }
 
     // Check for API key before proceeding
-    if settings.openai_api_key.trim().is_empty() {
-        error!("OpenAI API key is not set. Cannot analyze findings.");
-        println!("Please set the OPENAI_API_KEY environment variable.");
+    if settings.llm_api_key.trim().is_empty() {
+        error!("LLM API key is not set. Cannot analyze findings.");
+        println!("Please set the LLM_API_KEY environment variable.");
         return Err(anyhow::anyhow!("API key missing"));
     }
     
-    info!("Analyzing findings with LLM...");
-    let llm_client = LlmClient::new(&settings.openai_api_key)?;
+    info!("Analyzing findings with LLM using {:?} (model: {})...", 
+        settings.llm_provider, settings.llm_model
+    );
+    
+    let llm_client = LlmClient::new(&settings.llm_api_key)?;
     
     let analysis = llm_client.analyze_s3_findings(&findings).await?;
     

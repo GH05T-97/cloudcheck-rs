@@ -5,7 +5,7 @@ use std::env;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
-    pub openai_api_key: String,
+    pub llm_api_key: String,
     pub aws: AwsSettings,
     pub output: OutputSettings,
     pub logging: LoggingSettings,
@@ -35,7 +35,7 @@ pub struct LoggingSettings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            openai_api_key: String::new(),
+            llm_api_key: String::new(),
             aws: AwsSettings {
                 default_region: "us-east-1".to_string(),
                 profile: None,
@@ -66,8 +66,8 @@ impl Settings {
             .map_err(|e| CloudGuardError::ConfigError(e.to_string()))?;
 
         // Override with environment variables
-        if let Ok(api_key) = env::var("OPENAI_API_KEY") {
-            settings.set("openai_api_key", api_key)
+        if let Ok(api_key) = env::var("LLM_API_KEY") {
+            settings.set("llm_api_key", api_key)
                 .map_err(|e| CloudGuardError::ConfigError(e.to_string()))?;
         }
 
@@ -85,8 +85,8 @@ impl Settings {
             .map_err(|e| CloudGuardError::ConfigError(e.to_string()))?;
 
         // Ensure we have an API key
-        if config.openai_api_key.is_empty() {
-            config.openai_api_key = env::var("OPENAI_API_KEY")
+        if config.llm_api_key.is_empty() {
+            config.llm_api_key = env::var("LLM_API_KEY")
                 .unwrap_or_default();
         }
 
@@ -94,7 +94,7 @@ impl Settings {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if self.openai_api_key.is_empty() {
+        if self.llm_api_key.is_empty() {
             return Err(CloudGuardError::ConfigError(
                 "OpenAI API key is required. Set OPENAI_API_KEY environment variable.".to_string()
             ));

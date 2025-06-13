@@ -3,161 +3,227 @@ use crate::{
     error::{CloudGuardError, Result},
 };
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde_json::json; // Needed for building JSON payloads
 use tracing::{info, debug};
 
-#[derive(Debug, Serialize)]
-struct OpenAIRequest {
-    model: String,
-    messages: Vec<OpenAIMessage>,
-    max_tokens: u32,
-    temperature: f32,
-}
-
-#[derive(Debug, Serialize)]
-struct OpenAIMessage {
-    role: String,
-    content: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAIResponse {
-    choices: Vec<OpenAIChoice>,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAIChoice {
-    message: OpenAIResponseMessage,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAIResponseMessage {
-    content: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LlmAnalysis {
-    pub summary: String,
-    pub priority_findings: Vec<PriorityFinding>,
-    pub recommendations: Vec<Recommendation>,
-    pub risk_assessment: RiskAssessment,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PriorityFinding {
-    pub finding_id: String,
-    pub impact: String,
-    pub urgency: String,
-    pub business_context: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Recommendation {
-    pub title: String,
-    pub description: String,
-    pub category: String,
-    pub effort: String, // Low, Medium, High
-    pub impact: String, // Low, Medium, High
-    pub steps: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RiskAssessment {
-    pub overall_risk_level: String,
-    pub critical_issues_count: u32,
-    pub high_issues_count: u32,
-    pub medium_issues_count: u32,
-    pub low_issues_count: u32,
-    pub compliance_impact: String,
-    pub business_impact: String,
-}
+use crate::llm::structs::{
+    OpenAICompletionRequest, OpenAIMessage, OpenAICompletionResponse,
+    GeminiGenerateContentRequest, GeminiContent, GeminiPart, GeminiGenerationConfig,
+    GeminiGenerateContentResponse, LlmAnalysis, LlmProviderType
+};
 
 pub struct LlmClient {
     client: Client,
     api_key: String,
-    api_url: String,
+    provider_type: LlmProviderType,
+    model_name: String,
 }
 
 impl LlmClient {
-    pub fn new(api_key: &str) -> Result<Self> {
+    /// Creates a new LlmClient configured for a specific provider and model.
+    pub fn new(api_key: &str, provider_type: LlmProviderType, model_name: &str) -> Result<Self> {
         if api_key.is_empty() {
             return Err(CloudGuardError::ConfigError(
-                "OpenAI API key is required".to_string()
+                "LLM API key is required".to_string()
             ));
         }
 
         Ok(Self {
             client: Client::new(),
             api_key: api_key.to_string(),
-            api_url: "https://api.openai.com/v1/chat/completions".to_string(),
+            provider_type,
+            model_name: model_name.to_string(),
         })
     }
 
+    /// Analyzes S3 findings using the configured LLM.
     pub async fn analyze_s3_findings(&self, findings: &[Finding]) -> Result<LlmAnalysis> {
-        info!("Analyzing {} S3 findings with LLM", findings.len());
+        info!("Analyzing {} S3 findings with LLM ({:?}, model: {})", 
+            findings.len(), self.provider_type, self.model_name);
         
         let prompt = self.create_s3_analysis_prompt(findings);
-        let response = self.call_openai(&prompt).await?;
+        let response_content = self.call_llm(&prompt).await?;
         
         // Parse the JSON response from the LLM
-        let analysis: LlmAnalysis = serde_json::from_str(&response)
+        let analysis: LlmAnalysis = serde_json::from_str(&response_content)
             .map_err(|e| CloudGuardError::LlmError(
-                format!("Failed to parse LLM response: {}", e)
+                format!("Failed to parse LLM response: {} (Response: {})", e, response_content)
             ))?;
 
         debug!("LLM analysis completed successfully");
         Ok(analysis)
     }
 
-    async fn call_openai(&self, prompt: &str) -> Result<String> {
-        let request = OpenAIRequest {
-            model: "gpt-4".to_string(),
-            messages: vec![
-                OpenAIMessage {
-                    role: "system".to_string(),
-                    content: "You are a cloud security expert analyzing AWS S3 bucket configurations. Return your analysis as valid JSON only, with no additional text or markdown.".to_string(),
-                },
-                OpenAIMessage {
-                    role: "user".to_string(),
-                    content: prompt.to_string(),
-                },
-            ],
-            max_tokens: 2000,
-            temperature: 0.1,
+    /// Makes the actual API call to the configured LLM.
+    async fn call_llm(&self, prompt: &str) -> Result<String> {
+        let (url, request_body) = match self.provider_type {
+            LlmProviderType::OpenAI => {
+                let request = OpenAICompletionRequest {
+                    model: self.model_name.clone(),
+                    messages: vec![
+                        OpenAIMessage {
+                            role: "system".to_string(),
+                            content: "You are a cloud security expert analyzing AWS S3 bucket configurations. Return your analysis as valid JSON only, with no additional text or markdown.".to_string(),
+                        },
+                        OpenAIMessage {
+                            role: "user".to_string(),
+                            content: prompt.to_string(),
+                        },
+                    ],
+                    max_tokens: 2000,
+                    temperature: 0.1,
+                };
+                ("https://api.openai.com/v1/chat/completions".to_string(), serde_json::to_value(&request)?)
+            }
+            LlmProviderType::GeminiFlash => {
+                let request = GeminiGenerateContentRequest {
+                    contents: vec![
+                        GeminiContent {
+                            role: "user".to_string(),
+                            parts: vec![
+                                GeminiPart {
+                                    text: "You are a cloud security expert analyzing AWS S3 bucket configurations. Return your analysis as valid JSON only, with no additional text or markdown.".to_string(),
+                                },
+                                GeminiPart {
+                                    text: prompt.to_string(),
+                                },
+                            ],
+                        },
+                    ],
+                    // Explicitly ask for JSON output using responseSchema for Gemini
+                    generation_config: Some(GeminiGenerationConfig {
+                        response_mime_type: "application/json".to_string(),
+                        response_schema: json!({
+                            "type": "OBJECT",
+                            "properties": {
+                                "summary": { "type": "STRING" },
+                                "priority_findings": {
+                                    "type": "ARRAY",
+                                    "items": {
+                                        "type": "OBJECT",
+                                        "properties": {
+                                            "finding_id": { "type": "STRING" },
+                                            "impact": { "type": "STRING" },
+                                            "urgency": { "type": "STRING" },
+                                            "business_context": { "type": "STRING" }
+                                        }
+                                    }
+                                },
+                                "recommendations": {
+                                    "type": "ARRAY",
+                                    "items": {
+                                        "type": "OBJECT",
+                                        "properties": {
+                                            "title": { "type": "STRING" },
+                                            "description": { "type": "STRING" },
+                                            "category": { "type": "STRING" },
+                                            "effort": { "type": "STRING" },
+                                            "impact": { "type": "STRING" },
+                                            "steps": { "type": "ARRAY", "items": { "type": "STRING" } }
+                                        }
+                                    }
+                                },
+                                "risk_assessment": {
+                                    "type": "OBJECT",
+                                    "properties": {
+                                        "overall_risk_level": { "type": "STRING" },
+                                        "critical_issues_count": { "type": "NUMBER" },
+                                        "high_issues_count": { "type": "NUMBER" },
+                                        "medium_issues_count": { "type": "NUMBER" },
+                                        "low_issues_count": { "type": "NUMBER" },
+                                        "compliance_impact": { "type": "STRING" },
+                                        "business_impact": { "type": "STRING" }
+                                    }
+                                }
+                            }
+                        }),
+                    }),
+                };
+                (
+                    format!("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}", 
+                            self.model_name, self.api_key), // Gemini API key in URL param
+                    serde_json::to_value(&request)?
+                )
+            }
+            // LlmProviderType::DeepSeek => {
+            //     // Placeholder for DeepSeek
+            //     // You would define DeepSeek specific request/response structs and API logic here.
+            //     // Example (hypothetical, based on common patterns):
+            //     // let request = DeepSeekCompletionRequest { ... };
+            //     // ("https://api.deepseek.com/v1/chat/completions".to_string(), serde_json::to_value(&request)?)
+            //     return Err(CloudGuardError::LlmError("DeepSeek integration not yet implemented.".to_string()));
+            // }
         };
 
-        let response = self.client
-            .post(&self.api_url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("Content-Type", "application/json")
-            .json(&request)
-            .send()
-            .await?;
+        let request_builder = self.client
+            .post(&url)
+            .json(&request_body);
+        
+        // OpenAI uses "Authorization: Bearer KEY", Gemini uses "?key=KEY" in URL
+        let response = match self.provider_type {
+            LlmProviderType::OpenAI => {
+                request_builder
+                    .header("Authorization", format!("Bearer {}", self.api_key))
+                    .header("Content-Type", "application/json") // Explicitly set for clarity
+                    .send()
+                    .await?
+            }
+            LlmProviderType::GeminiFlash => {
+                // Gemini key is already in the URL for this version
+                request_builder
+                    .header("Content-Type", "application/json") // Explicitly set for clarity
+                    .send()
+                    .await?
+            }
+            // LlmProviderType::DeepSeek => { ... }
+        };
 
-        if !response.status().is_success() {
+
+        let status = response.status();
+        if !status.is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(CloudGuardError::LlmError(
-                format!("OpenAI API error: {}", error_text)
+                format!("LLM API error (Status: {}): {}", status, error_text)
             ));
         }
 
-        let openai_response: OpenAIResponse = response.json().await?;
+        let response_body: serde_json::Value = response.json().await?;
+        debug!("LLM API raw response: {}", response_body);
+
+        let extracted_content = match self.provider_type {
+            LlmProviderType::OpenAI => {
+                let openai_response: OpenAICompletionResponse = serde_json::from_value(response_body)
+                    .map_err(|e| CloudGuardError::LlmError(format!("Failed to parse OpenAI response: {}", e)))?;
+                openai_response
+                    .choices
+                    .first()
+                    .map(|choice| choice.message.content.clone())
+                    .ok_or_else(|| CloudGuardError::LlmError("No content in OpenAI response".to_string()))?
+            }
+            LlmProviderType::GeminiFlash => {
+                let gemini_response: GeminiGenerateContentResponse = serde_json::from_value(response_body)
+                    .map_err(|e| CloudGuardError::LlmError(format!("Failed to parse Gemini response: {}", e)))?;
+                gemini_response
+                    .candidates
+                    .first()
+                    .map(|candidate| candidate.content.parts.first().map(|part| part.text.clone()))
+                    .flatten() // Flatten Option<Option<String>> to Option<String>
+                    .ok_or_else(|| CloudGuardError::LlmError("No content in Gemini response".to_string()))?
+            }
+            // LlmProviderType::DeepSeek => { ... }
+        };
         
-        openai_response
-            .choices
-            .first()
-            .map(|choice| choice.message.content.clone())
-            .ok_or_else(|| CloudGuardError::LlmError(
-                "No response from OpenAI API".to_string()
-            ))
+        Ok(extracted_content)
     }
 
+    /// Creates a standardized prompt for S3 analysis.
     fn create_s3_analysis_prompt(&self, findings: &[Finding]) -> String {
         let findings_json = serde_json::to_string_pretty(findings)
             .unwrap_or_else(|_| "[]".to_string());
 
         format!(r#"
 Analyze the following S3 security findings and provide a comprehensive analysis in JSON format.
+Ensure the output is strictly valid JSON conforming to the specified schema, with no surrounding text or markdown.
 
 S3 Findings:
 {}

@@ -1,7 +1,5 @@
 use std::sync::Arc;
-
-// src/aws/client.rs
-use aws_config::{BehaviorVersion, Region};
+use aws_config::{BehaviorVersion};
 use aws_sdk_s3::Client as S3Client;
 use aws_sdk_sts::Client as StsClient;
 use crate::error::{CloudGuardError, Result};
@@ -31,7 +29,7 @@ impl AwsClient {
         info!("Using AWS region: {}", region_str);
         
         // Create AWS service clients using the loaded configuration
-        let s3_client = Arc::new(S3Client::new(&config));
+         let s3_client = Arc::new(S3Client::new(&config));
         let sts_client = Arc::new(StsClient::new(&config));
         
         match sts_client.get_caller_identity().send().await {
