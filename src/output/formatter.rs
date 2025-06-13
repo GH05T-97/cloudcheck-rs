@@ -1,5 +1,7 @@
 use crate::{
-    error::Result, llm::{client::{LlmAnalysis, PriorityFinding, Recommendation, RiskAssessment}}, scanner::types::{Finding, Severity}
+    error::Result,
+    llm::structs::{PriorityFinding, Recommendation, RiskAssessment, LlmAnalysis},
+    scanner::types::{Finding, Severity}
 };
 use colored::*;
 use tabled::{Table, Tabled};

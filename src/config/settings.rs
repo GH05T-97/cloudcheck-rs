@@ -3,9 +3,13 @@ use config::{Config, Environment, File};
 use serde::{Deserialize, Serialize};
 use std::env;
 
+use crate::llm::structs::LlmProviderType; 
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
     pub llm_api_key: String,
+    pub llm_provider: LlmProviderType, 
+    pub llm_model: String, 
     pub aws: AwsSettings,
     pub output: OutputSettings,
     pub logging: LoggingSettings,
@@ -36,6 +40,8 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             llm_api_key: String::new(),
+            llm_provider: LlmProviderType::OpenAI, 
+            llm_model: "gpt-4-turbo".to_string(),
             aws: AwsSettings {
                 default_region: "us-east-1".to_string(),
                 profile: None,
@@ -66,6 +72,11 @@ impl Settings {
         // Override with environment variables using set_override
         if let Ok(api_key) = env::var("LLM_API_KEY") {
             builder = builder.set_override("llm_api_key", api_key)
+                .map_err(|e| CloudGuardError::ConfigError(e.to_string()))?;
+        }
+
+        if let Ok(model) = env::var("LLM_MODEL") {
+            builder = builder.set_override("llm_model", model)
                 .map_err(|e| CloudGuardError::ConfigError(e.to_string()))?;
         }
 

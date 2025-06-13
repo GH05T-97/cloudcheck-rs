@@ -88,8 +88,12 @@ async fn handle_s3_scan(aws_client: &AwsClient, settings: &Settings) -> Result<(
     info!("Analyzing findings with LLM using {:?} (model: {})...", 
         settings.llm_provider, settings.llm_model
     );
-    
-    let llm_client = LlmClient::new(&settings.llm_api_key)?;
+
+    let llm_client = LlmClient::new(
+        &settings.llm_api_key,          // Pass API key reference
+        settings.llm_provider.clone(),  // Clone the enum for ownership
+        &settings.llm_model             // Pass model name reference
+    )?;
     
     let analysis = llm_client.analyze_s3_findings(&findings).await?;
     
