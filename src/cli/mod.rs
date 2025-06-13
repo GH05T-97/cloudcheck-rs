@@ -16,18 +16,6 @@ pub enum Commands {
         /// Service to scan (s3, lambda, iam, etc.)
         service: String,
         
-        /// AWS region to scan
-        #[arg(short, long)]
-        region: Option<String>,
-        
-        /// AWS profile to use
-        #[arg(short, long)]
-        profile: Option<String>,
-    },
-    /// Configure CLI settings
-    Config {
-        /// Set OpenAI API key
-        #[arg(long)]
-        set_api_key: Option<String>,
-    },
+
+    }
 }
