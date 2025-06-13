@@ -97,7 +97,7 @@ impl Settings {
     pub fn validate(&self) -> Result<()> {
         if self.llm_api_key.is_empty() {
             return Err(CloudGuardError::ConfigError(
-                "OpenAI API key is required. Set OPENAI_API_KEY environment variable.".to_string()
+                "LLM API key is required. Set LLM_API_KEY environment variable.".to_string()
             ));
         }
 
