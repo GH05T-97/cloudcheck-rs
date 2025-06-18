@@ -109,6 +109,7 @@ impl S3Scanner {
         self.check_object_lock(bucket_name, &mut bucket_info).await?;
         self.check_intelligent_tiering(bucket_name, &mut bucket_info).await?;
         self.analyze_storage_classes(bucket_name, &mut bucket_info).await?;
+        self.generate_waf_findings(&mut bucket_info).await?;
 
         Ok(bucket_info)
     }

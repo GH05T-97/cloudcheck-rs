@@ -45,6 +45,7 @@ tabled = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.17.0", features = ["v4"] }
 dotenvy = "0.15.7"
+aws-sdk-iam = "1.77.0"
 
 [dev-dependencies]
 tokio-test = "0.4"

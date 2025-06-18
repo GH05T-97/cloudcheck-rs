@@ -11,52 +11,29 @@ pub struct Settings {
     pub llm_provider: LlmProviderType, 
     pub llm_model: String, 
     pub aws: AwsSettings,
-    pub output: OutputSettings,
-    pub logging: LoggingSettings,
+
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AwsSettings {
-    pub default_region: String,
-    pub profile: Option<String>,
-    pub assume_role_arn: Option<String>,
+    pub aws_region: String,
+    pub aws_secret_access_key: Option<String>,
+    pub aws_access_key:  Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct OutputSettings {
-    pub format: String, // json, table, summary
-    pub verbose: bool,
-    pub save_to_file: bool,
-    pub output_directory: String,
-}
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct LoggingSettings {
-    pub level: String,
-    pub format: String, // json, pretty
-}
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             llm_api_key: String::new(),
             llm_provider: LlmProviderType::OpenAI, 
-            llm_model: "gpt-4-turbo".to_string(),
+            llm_model: "gpt-4o".to_string(), 
             aws: AwsSettings {
-                default_region: "us-east-1".to_string(),
-                profile: None,
-                assume_role_arn: None,
-            },
-            output: OutputSettings {
-                format: "table".to_string(),
-                verbose: false,
-                save_to_file: false,
-                output_directory: "./reports".to_string(),
-            },
-            logging: LoggingSettings {
-                level: "info".to_string(),
-                format: "pretty".to_string(),
-            },
+                aws_region:  "us-east-1".to_string(),
+                aws_secret_access_key: None,
+                aws_access_key: None,
+            }
         }
     }
 }
@@ -64,43 +41,56 @@ impl Default for Settings {
 impl Settings {
     pub fn new() -> Result<Self> {
         let mut builder = Config::builder()
+            // Add config files and environment sources.
             .add_source(File::with_name("config/default").required(false))
             .add_source(File::with_name(&format!("config/{}", env::var("ENVIRONMENT").unwrap_or_else(|_| "development".into()))).required(false))
             .add_source(File::with_name("config/local").required(false))
-            .add_source(Environment::with_prefix("CLOUDGUARD").separator("_"));
+            // Environment variables with CLOUDGUARD_ prefix will map to struct fields
+            // e.g., CLOUDGUARD_LLM_API_KEY -> llm_api_key, CLOUDGUARD_AWS_AWS_REGION -> aws.aws_region
+            .add_source(Environment::with_prefix("CLOUDGUARD").separator("_").ignore_empty(true)); 
 
-        // Override with environment variables using set_override
+        // Explicit overrides for direct environment variables (non-CLOUDGUARD_ prefixed)
+        // Ensure the key in set_override matches the full path to the struct field name exactly (case-sensitive)
         if let Ok(api_key) = env::var("LLM_API_KEY") {
-            builder = builder.set_override("llm_api_key", api_key)
+            builder = builder.set_override("llm_api_key", api_key) 
                 .map_err(|e| CloudGuardError::ConfigError(e.to_string()))?;
         }
-
+        if let Ok(provider) = env::var("LLM_PROVIDER") {
+            builder = builder.set_override("llm_provider", provider) 
+                .map_err(|e| CloudGuardError::ConfigError(e.to_string()))?;
+        }
         if let Ok(model) = env::var("LLM_MODEL") {
-            builder = builder.set_override("llm_model", model)
+            builder = builder.set_override("llm_model", model) 
+                .map_err(|e| CloudGuardError::ConfigError(e.to_string()))?;
+        }
+        
+        // --- AWS Settings Overrides ---
+        if let Ok(region) = env::var("AWS_REGION") {
+            // Corrected: Path must be "aws.aws_region" to match the struct field
+            builder = builder.set_override("aws.aws_region", region) 
+                .map_err(|e| CloudGuardError::ConfigError(e.to_string()))?;
+        }
+        if let Ok(access_key_id) = env::var("AWS_ACCESS_KEY_ID") { // Renamed 'profile' to 'access_key_id' for clarity
+            // Corrected: Path must be "aws.aws_access_key" to match the struct field
+            builder = builder.set_override("aws.aws_access_key", access_key_id) 
+                .map_err(|e| CloudGuardError::ConfigError(e.to_string()))?;
+        }
+        
+        if let Ok(secret_access_key) = env::var("AWS_SECRET_ACCESS_KEY") { // Corrected env var name from AWS_SECRET_ACCESS_KEY_ID
+            // Corrected: Path must be "aws.aws_secret_access_key" to match the struct field
+            builder = builder.set_override("aws.aws_secret_access_key", secret_access_key)
                 .map_err(|e| CloudGuardError::ConfigError(e.to_string()))?;
         }
 
-        if let Ok(region) = env::var("AWS_DEFAULT_REGION") {
-            builder = builder.set_override("aws.default_region", region)
-                .map_err(|e| CloudGuardError::ConfigError(e.to_string()))?;
-        }
-
-        if let Ok(profile) = env::var("AWS_PROFILE") {
-            builder = builder.set_override("aws.profile", profile)
-                .map_err(|e| CloudGuardError::ConfigError(e.to_string()))?;
-        }
 
         let settings = builder.build()
             .map_err(|e| CloudGuardError::ConfigError(e.to_string()))?;
 
-        let mut config: Settings = settings.try_deserialize()
+        let config: Settings = settings.try_deserialize()
             .map_err(|e| CloudGuardError::ConfigError(e.to_string()))?;
 
-        // Ensure we have an API key
-        if config.llm_api_key.is_empty() {
-            config.llm_api_key = env::var("LLM_API_KEY")
-                .unwrap_or_default();
-        }
+        // Perform final validation.
+        config.validate()?;
 
         Ok(config)
     }
@@ -108,10 +98,11 @@ impl Settings {
     pub fn validate(&self) -> Result<()> {
         if self.llm_api_key.is_empty() {
             return Err(CloudGuardError::ConfigError(
-                "LLM API key is required. Set LLM_API_KEY environment variable.".to_string()
+                "LLM API key is required. Set LLM_API_KEY environment variable or in config file.".to_string()
             ));
         }
 
+        // You could add more validation here, e.g., check if llm_model is valid for llm_provider
         Ok(())
     }
 }

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use aws_config::{BehaviorVersion};
 use aws_sdk_s3::Client as S3Client;
 use aws_sdk_sts::Client as StsClient;
-use crate::error::{CloudGuardError, Result};
+use crate::{error::{CloudGuardError, Result}};
 use tracing::{info, warn};
 use dotenvy;
 

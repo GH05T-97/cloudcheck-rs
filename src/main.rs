@@ -10,10 +10,11 @@ use cloudguard_cli::{
 };
 use tracing::{info, error, warn};
 use tracing_subscriber;
+use dotenvy;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging for application-level feedback
+    dotenvy::dotenv().ok();
     tracing_subscriber::fmt()
         .with_env_filter("cloudguard_cli=info")
         .without_time() 
