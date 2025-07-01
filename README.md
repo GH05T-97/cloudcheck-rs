@@ -15,30 +15,6 @@ Currently supports **AWS** infrastructure scanning and provides **AI-driven anal
 * ✅ Supports **JSON output** for easy integration into CI/CD pipelines or further analysis.
 * ✅ Securely loads **AWS credentials** from environment variables or `~/.aws` configuration, adhering to AWS best practices.
 
----
-
-## 🚀 Future Roadmap
-
-Future versions aim for comprehensive multi-cloud coverage and advanced AI capabilities:
-
-* 🌐 **Expanded Multi-Cloud Support**: Integrate scanning capabilities for **GCP**, **Azure**, **DigitalOcean**, **Hetzner**, **Akamai Cloud**, and **IBM Cloud**.
-* 🤖 **Advanced AI-Driven Insights**:
-    * Generate intelligent recommendations for **disaster recovery planning** and **business continuity**.
-    * Propose concrete steps for **performance tuning** and **resource optimization** using cloud telemetry and metrics.
-    * Identify and suggest fixes for complex **cost optimization** opportunities.
-    * Leverage **Machine Learning**, **Retrieval-Augmented Generation (RAG)**, and **LLM fine-tuning** for deeper, more contextual analysis of findings.
-* 📄 **Static Analysis**: Implement scanning for **Infrastructure-as-Code** (Terraform, CloudFormation, CDK) and **CI/CD pipeline configurations** to detect risks pre-deployment.
-* 💡 **Enhanced Reporting**:
-    * **Security Score**: Develop a quantifiable security score to track cloud posture improvements over time.
-    * **Drift Detection (`scan --diff`)**: Identify and highlight configuration changes since the last scan.
-    * **Automated Remediation (`scan --fix`)**: Provide options for CLI-level automatic fixes for selected issues (with explicit user consent).
-    * **Custom Rule Plugins**: Enable users to define and extend scanning rules via simple scripts or configuration files.
-* 📊 **Web-based Dashboard (Future Vision)**:
-    * A centralized platform to visualize **historical scan logs**, track **security trends**, and manage **misconfiguration findings**.
-    * Group findings by resource type, categorize by severity, and provide AI-generated explanations and recommendations.
-    * Offer environment-specific views (e.g., `prod`, `staging`) and quick onboarding with secure authentication methods.
-
----
 
 ## 🛠️ Tech Stack
 
