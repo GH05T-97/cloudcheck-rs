@@ -15,6 +15,7 @@ path = "src/main.rs"
 aws-config = "1.1.0"
 aws-sdk-s3 = "1.10.0"
 aws-sdk-sts = "1.10.0"
+aws-sdk-iam = "1.77.0"
 
 # CLI framework
 clap = { version = "4.4", features = ["derive", "env"] }
@@ -45,7 +46,6 @@ tabled = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.17.0", features = ["v4"] }
 dotenvy = "0.15.7"
-aws-sdk-iam = "1.77.0"
 
 [dev-dependencies]
 tokio-test = "0.4"

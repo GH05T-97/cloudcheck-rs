@@ -1,7 +1,7 @@
 use crate::{
     error::Result,
     llm::structs::{PriorityFinding, Recommendation, RiskAssessment, LlmAnalysis},
-    scanner::types::{Finding, Severity}
+    scanner::types::{Finding, Severity, Category}
 };
 use colored::*;
 use tabled::{Table, Tabled};
@@ -210,4 +210,163 @@ impl ReportFormatter {
             _ => impact.white(),
         }
     }
+
+
+     pub async fn display_iam_report(&self, findings: &[Finding], analysis: &LlmAnalysis) -> Result<()> {
+        self.print_iam_header();
+        self.print_iam_summary(findings, analysis);
+        self.print_priority_findings(&analysis.priority_findings, findings);
+        self.print_iam_findings_table(findings);
+        self.print_iam_recommendations(&analysis.recommendations);
+        self.print_risk_assessment(analysis.risk_assessment.clone());
+        
+        Ok(())
+    }
+
+    fn print_iam_header(&self) {
+        println!("{}", "CloudGuard IAM Security Scan Report".bright_blue().bold());
+        println!("{}", "=".repeat(50));
+        println!();
+    }
+
+    fn print_iam_summary(&self, findings: &[Finding], analysis: &LlmAnalysis) {
+        println!("{}", "Executive Summary".bright_yellow().bold());
+        println!("{}", "-".repeat(20));
+        println!("{}", analysis.summary);
+        println!();
+
+        let (critical, high, medium, low) = self.count_findings_by_severity(findings);
+        
+        println!("{}", "IAM Security Overview".bright_cyan().bold());
+        println!("{}", "-".repeat(20));
+        println!("🔴 Critical: {}", critical.to_string().red().bold());
+        println!("🟠 High:     {}", high.to_string().bright_red());
+        println!("🟡 Medium:   {}", medium.to_string().yellow());
+        println!("🟢 Low:      {}", low.to_string().green());
+        println!("📊 Total:    {}", findings.len().to_string().bright_white().bold());
+        
+        // IAM-specific summary
+        let security_findings = findings.iter().filter(|f| matches!(f.category, Category::Security)).count();
+        let cost_findings = findings.iter().filter(|f| matches!(f.category, Category::CostOptimization)).count();
+        let compliance_findings = findings.iter().filter(|f| matches!(f.category, Category::Compliance)).count();
+        
+        println!();
+        println!("{}", "Finding Categories".bright_magenta().bold());
+        println!("{}", "-".repeat(20));
+        println!("🔒 Security:    {}", security_findings.to_string().red());
+        println!("💰 Cost Opt:    {}", cost_findings.to_string().yellow());
+        println!("📋 Compliance:  {}", compliance_findings.to_string().blue());
+        println!();
+    }
+
+    fn print_iam_findings_table(&self, findings: &[Finding]) {
+        if findings.is_empty() {
+            println!("{}", "✅ No IAM security issues found!".bright_green().bold());
+            return;
+        }
+
+        println!("{}", "IAM Findings".bright_blue().bold());
+        println!("{}", "-".repeat(20));
+
+        // Group findings by category for better organization
+        let mut security_findings = Vec::new();
+        let mut cost_findings = Vec::new();
+        let mut other_findings = Vec::new();
+
+        for finding in findings {
+            match finding.category {
+                Category::Security => security_findings.push(finding),
+                Category::CostOptimization => cost_findings.push(finding),
+                _ => other_findings.push(finding),
+            }
+        }
+
+        if !security_findings.is_empty() {
+            println!("\n{}", "🔒 Security Issues".red().bold());
+            for finding in security_findings {
+                self.print_finding_row(finding);
+            }
+        }
+
+        if !cost_findings.is_empty() {
+            println!("\n{}", "💰 Cost Optimization".yellow().bold());
+            for finding in cost_findings {
+                self.print_finding_row(finding);
+            }
+        }
+
+        if !other_findings.is_empty() {
+            println!("\n{}", "📋 Other Issues".blue().bold());
+            for finding in other_findings {
+                self.print_finding_row(finding);
+            }
+        }
+
+        println!();
+    }
+
+    fn print_finding_row(&self, finding: &Finding) {
+        println!("  {} {} {}",
+            self.severity_icon(&finding.severity),
+            finding.title.bright_white().bold(),
+            format!("({})", finding.resource_id).dimmed()
+        );
+        println!("    {}", finding.description);
+        
+        // Extract WAF information if available
+        if let Some(waf_pillar) = finding.details.get("waf_pillar") {
+            if let Some(waf_question) = finding.details.get("waf_question") {
+                println!("    {} WAF: {} - {}", 
+                    "🏗️".bright_blue(),
+                    waf_pillar.as_str().unwrap_or(""),
+                    waf_question.as_str().unwrap_or("")
+                );
+            }
+        }
+        println!();
+    }
+
+    fn print_iam_recommendations(&self, recommendations: &[Recommendation]) {
+        if recommendations.is_empty() {
+            return;
+        }
+
+        println!("{}", "IAM Recommendations".bright_green().bold());
+        println!("{}", "-".repeat(20));
+
+        for (i, rec) in recommendations.iter().enumerate() {
+            println!("{}. {} {}", 
+                (i + 1).to_string().bright_white().bold(),
+                self.iam_category_icon(&rec.category),
+                rec.title.bright_white().bold()
+            );
+            println!("   📝 {}", rec.description);
+            println!("   🏗️  Effort: {} | 📈 Impact: {}", 
+                self.format_effort(&rec.effort),
+                self.format_impact(&rec.impact)
+            );
+            
+            if !rec.steps.is_empty() {
+                println!("   📋 Implementation Steps:");
+                for (step_i, step) in rec.steps.iter().enumerate() {
+                    println!("      {}. {}", step_i + 1, step);
+                }
+            }
+            println!();
+        }
+    }
+
+    fn iam_category_icon(&self, category: &str) -> &str {
+        match category {
+            "Security" => "🔒",
+            "Access Management" => "👤",
+            "Compliance" => "📋",
+            "Cost" => "💰",
+            "CostOptimization" => "💰",
+            "Authentication" => "🔐",
+            "Authorization" => "🛡️",
+            _ => "📌",
+        }}
+
+    
 }

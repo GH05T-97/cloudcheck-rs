@@ -222,52 +222,129 @@ impl LlmClient {
             .unwrap_or_else(|_| "[]".to_string());
 
         format!(r#"
-Analyze the following S3 security findings and provide a comprehensive analysis in JSON format.
-Ensure the output is strictly valid JSON conforming to the specified schema, with no surrounding text or markdown.
+            Analyze the following S3 security findings and provide a comprehensive analysis in JSON format.
+            Ensure the output is strictly valid JSON conforming to the specified schema, with no surrounding text or markdown.
 
-S3 Findings:
-{}
+            S3 Findings:
+            {}
 
-Please provide your analysis in the following JSON structure:
-{{
-  "summary": "Brief overview of the security posture",
-  "priority_findings": [
-    {{
-      "finding_id": "UUID of the finding",
-      "impact": "Description of potential impact",
-      "urgency": "How urgently this should be addressed",
-      "business_context": "Business implications"
-    }}
-  ],
-  "recommendations": [
-    {{
-      "title": "Recommendation title",
-      "description": "Detailed description",
-      "category": "Security/Cost/Performance/DR",
-      "effort": "Low/Medium/High",
-      "impact": "Low/Medium/High",
-      "steps": ["Step 1", "Step 2", "Step 3"]
-    }}
-  ],
-  "risk_assessment": {{
-    "overall_risk_level": "Low/Medium/High/Critical",
-    "critical_issues_count": 0,
-    "high_issues_count": 0,
-    "medium_issues_count": 0,
-    "low_issues_count": 0,
-    "compliance_impact": "Impact on compliance requirements",
-    "business_impact": "Overall business impact assessment"
-  }}
-}}
+            Please provide your analysis in the following JSON structure:
+            {{
+            "summary": "Brief overview of the security posture",
+            "priority_findings": [
+                {{
+                "finding_id": "UUID of the finding",
+                "impact": "Description of potential impact",
+                "urgency": "How urgently this should be addressed",
+                "business_context": "Business implications"
+                }}
+            ],
+            "recommendations": [
+                {{
+                "title": "Recommendation title",
+                "description": "Detailed description",
+                "category": "Security/Cost/Performance/DR",
+                "effort": "Low/Medium/High",
+                "impact": "Low/Medium/High",
+                "steps": ["Step 1", "Step 2", "Step 3"]
+                }}
+            ],
+            "risk_assessment": {{
+                "overall_risk_level": "Low/Medium/High/Critical",
+                "critical_issues_count": 0,
+                "high_issues_count": 0,
+                "medium_issues_count": 0,
+                "low_issues_count": 0,
+                "compliance_impact": "Impact on compliance requirements",
+                "business_impact": "Overall business impact assessment"
+            }}
+            }}
 
-Focus on:
-1. Security vulnerabilities and their real-world impact
-2. Cost optimization opportunities
-3. Disaster recovery and business continuity risks
-4. Performance implications
-5. Compliance considerations (SOC2, PCI-DSS, GDPR, etc.)
+            Focus on:
+            1. Security vulnerabilities and their real-world impact
+            2. Cost optimization opportunities
+            3. Disaster recovery and business continuity risks
+            4. Performance implications
+            5. Compliance considerations (SOC2, PCI-DSS, GDPR, etc.)
 
-Provide actionable, specific recommendations with clear steps.
-"#, findings_json)
+            Provide actionable, specific recommendations with clear steps.
+            "#, findings_json)
     }
+
+    pub async fn analyze_iam_findings(&self, findings: &[Finding]) -> Result<LlmAnalysis> {
+        info!("Analyzing {} IAM findings with LLM ({:?}, model: {})", 
+            findings.len(), self.provider_type, self.model_name);
+        
+        let prompt = self.create_iam_analysis_prompt(findings);
+        let response_content = self.call_llm(&prompt).await?;
+        
+        // Parse the JSON response from the LLM
+        let analysis: LlmAnalysis = serde_json::from_str(&response_content)
+            .map_err(|e| CloudGuardError::LlmError(
+                format!("Failed to parse LLM response: {} (Response: {})", e, response_content)
+            ))?;
+
+        debug!("LLM IAM analysis completed successfully");
+        Ok(analysis)
+    }
+
+    fn create_iam_analysis_prompt(&self, findings: &[Finding]) -> String {
+        let findings_json = serde_json::to_string_pretty(findings)
+            .unwrap_or_else(|_| "[]".to_string());
+
+        format!(r#"
+            Analyze the following IAM security findings and provide a comprehensive analysis in JSON format.
+            Ensure the output is strictly valid JSON conforming to the specified schema, with no surrounding text or markdown.
+
+            IAM Findings:
+            {}
+
+            Please provide your analysis in the following JSON structure:
+            {{
+            "summary": "Brief overview of the IAM security posture and key concerns",
+            "priority_findings": [
+                {{
+                "finding_id": "UUID of the finding",
+                "impact": "Description of potential security impact",
+                "urgency": "How urgently this should be addressed",
+                "business_context": "Business implications and compliance considerations"
+                }}
+            ],
+            "recommendations": [
+                {{
+                "title": "Recommendation title",
+                "description": "Detailed description",
+                "category": "Security/Access Management/Compliance/Cost",
+                "effort": "Low/Medium/High",
+                "impact": "Low/Medium/High",
+                "steps": ["Step 1", "Step 2", "Step 3"]
+                }}
+            ],
+            "risk_assessment": {{
+                "overall_risk_level": "Low/Medium/High/Critical",
+                "critical_issues_count": 0,
+                "high_issues_count": 0,
+                "medium_issues_count": 0,
+                "low_issues_count": 0,
+                "compliance_impact": "Impact on compliance requirements (SOC2, ISO27001, etc.)",
+                "business_impact": "Overall business and security impact assessment"
+            }}
+            }}
+
+            Focus on:
+            1. Identity and Access Management security risks
+            2. Principle of least privilege violations
+            3. Authentication and authorization weaknesses
+            4. Compliance implications (SOC2, ISO27001, PCI-DSS, etc.)
+            5. Account security posture
+            6. Cost optimization opportunities (unused resources)
+            7. Operational security improvements
+            8. Multi-factor authentication gaps
+            9. Root account security
+            10. Cross-account access risks
+
+            Provide actionable, specific recommendations with clear implementation steps.
+            Consider AWS Well-Architected Framework Security Pillar principles.
+            "#, findings_json
+    )}
 }
